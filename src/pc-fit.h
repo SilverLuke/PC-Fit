@@ -10,20 +10,19 @@
 #define BL 2
 #define BR 3
 
-struct ARG {
-	char * file;
-	void (*notify)();
-};
+#include "config.h"
 
-void find_balance_board();
+struct xwii_iface * find_balance_board();
 
 void close_lib();
+
+void init_pcfit(struct Argument argument, void (*handler_fun)(float *));
+
+int start_pcfit();
 
 void set_point(int x, int y);
 
 void get_point(int *x, int *y);
-
-void init_pcfit(struct ARG a);
 
 void center_of_gravity(float cells[], float center[]);
 

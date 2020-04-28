@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <inttypes.h>
+#include <stdint.h>
 #include <assert.h>
 #include <unistd.h>
 #include <stdbool.h>
@@ -8,24 +10,24 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <string.h>
+#include <errno.h>
+#include <poll.h>
 
-#include <wiiuse.h>
-#include <gtk/gtk.h>
+#include <xwiimote.h>
 #include "pc-fit.h"
+#include "config.h"
 
 #define MAX_WIIMOTES	1
 #define TIMEOUT			5
 
-#define FPS				(75)
+#define FPS				(60)
 #define MILLI			(1. / FPS)  // Time between two frame
 #define MICROSECOND		(1000 * 1000)  // One second in microsecond
 #define REFRESH_TIME	(MILLI * MICROSECOND)  // In microsecond
 
-/*
- * Front end
- */
-
-static struct ARG arg;
+void (*gui_callback)(float *);
+struct Argument arg;
 
 struct PointBuffer {
 	int x;
@@ -61,150 +63,220 @@ void center_of_gravity(float cells[], float center[]) {
 	center[Y] = (cells[TL] + cells[TR]) - (cells[BL] + cells[BR]);
 }
 
-/*
- * BACK END
- */
-
-// Wii balance board zone.
-
-struct WM {
-	wiimote ** wiimotes;
-	int connected;
-} device;
-
-short any_wiimote_connected(wiimote** wm, int wiimotes) {
-	if (!wm) {
-		return 0;
-	}
-	for (int i = 0; i < wiimotes; i++) {
-		if (wm[i] && WIIMOTE_IS_CONNECTED(wm[i])) {
-			return 1;
-		}
-	}
-	return 0;
-}
-
-void handle_event(struct wiimote_t* wm) {
-	if (wm->exp.type == EXP_WII_BOARD) {
-		struct wii_board_t bb = *(wii_board_t*)&wm->exp.wb;
-		float cells[] = {bb.tl, bb.tr, bb.bl, bb.br};
-		arg.notify(cells);
-	}
-}
-
 // Thread Section
 
 struct Thread{
 	pthread_t t;
 	bool run;
 	bool stop;
-	char name[20];
+	pthread_mutex_t state_lock;
 }
-reader = {.run = FALSE, .stop = FALSE, .name = {"reader"}},
-finder = {.run = FALSE, .stop = FALSE, .name = {"finder"}};
+reader = {.run = false, .stop = false};
 
-void alloc_thread(struct Thread * t, void* func) {
+bool is_running(struct Thread thr) {
+    bool stop;
+    pthread_mutex_lock(&(reader.state_lock));
+    stop = reader.stop;
+    pthread_mutex_unlock(&(reader.state_lock));
+    return stop;
+}
+
+void wait_stop(struct Thread thr) {
+    pthread_mutex_lock(&(reader.state_lock));
+    reader.stop = true;
+    pthread_mutex_unlock(&(reader.state_lock));
+}
+
+struct xwii_iface * iface;
+static void handle_event(const struct xwii_event *event) {
+	float cell[] = {
+	        event->v.abs[2].x / 100.,  // TL
+	        event->v.abs[0].x / 100.,  // TR
+	        event->v.abs[3].x / 100.,  // BL
+	        event->v.abs[1].x / 100.   // BR
+	};
+	gui_callback(cell);
+}
+
+void alloc_thread(struct Thread * t, void* func, const char *name) {
 	struct Thread thread = *t;
-	if (thread.run == FALSE) {
+	if (thread.run == false) {
 		pthread_create(&(thread.t), NULL, func, NULL);
 		pthread_detach(thread.t);
-		thread.run = TRUE;
-		thread.stop = FALSE;
-		printf("Thread %s is started\n", thread.name);
+		// thread.run = true;
+		thread.stop = false;
+        //pthread_setname_np(thread, name);
+		printf("Info : Thread %s is started\n", name);
 	}
 	else {
-		printf("Thread %s is already started\n", thread.name);
+		printf("Info : Thread %s is already started\n", name);
 	}
 }
 
 int read_board() {
-	while (any_wiimote_connected(device.wiimotes, MAX_WIIMOTES)) {
-		if (wiiuse_poll(device.wiimotes, MAX_WIIMOTES)) {
-			for (int i = 0; i < MAX_WIIMOTES; ++i) {
-				switch (device.wiimotes[i]->event) {
-					case WIIUSE_EVENT:
-						handle_event(device.wiimotes[i]);
-						break;
-					case WIIUSE_DISCONNECT:
-					case WIIUSE_UNEXPECTED_DISCONNECT:
-						puts("the wiimote disconnected.");
-						break;
-					case WIIUSE_WII_BOARD_CTRL_INSERTED:
-						puts("Balance board controller inserted.");
-						break;
-					default:
-						puts("Default.");
-						break;
-				}
+    struct xwii_event event;
+	int ret = 0, fds_num;
+	xwii_iface_open(iface, xwii_iface_available(iface) | XWII_IFACE_WRITABLE);
+
+	struct pollfd fds[2];
+
+	memset(&fds, 0, sizeof(fds));
+	fds[0].fd = 0;
+	fds[0].events = POLLIN;
+	fds[1].fd = xwii_iface_get_fd(iface);
+	fds[1].events = POLLIN;
+	fds_num = 2;
+
+	ret = xwii_iface_watch(iface, true);
+	if (ret)
+		puts("Error: Cannot initialize hotplug watch descriptor");
+	
+	pthread_mutex_lock(&(reader.state_lock));
+	while (!(reader.stop)) {
+		pthread_mutex_unlock(&(reader.state_lock));
+
+		ret = poll(fds, fds_num, -1);
+		if (ret < 0) {
+			if (errno != EINTR) {
+				ret = -errno;
+				printf("Error: Cannot poll fds: %d\n", ret);
+				break;
 			}
 		}
+
+		ret = xwii_iface_dispatch(iface, &event, sizeof(event));
+		if (ret != false) {
+			if (ret != -EAGAIN) {
+				printf("Error: Read failed with err:%d\n", ret);
+			}
+		}
+		else {
+			switch (event.type) {
+				case XWII_EVENT_BALANCE_BOARD:
+					handle_event(&event);
+					break;
+				case XWII_EVENT_GONE:
+					puts("Info: Device gone");
+					fds[1].fd = -1;
+					fds[1].events = 0;
+					fds_num = 1;
+					break;
+				case XWII_EVENT_WATCH:
+					ret = xwii_iface_open(iface, xwii_iface_available(iface) | XWII_IFACE_WRITABLE);
+					if (ret)
+						puts("Error: Cannot open interface: %d");
+					break;
+				case XWII_EVENT_KEY:
+				case XWII_EVENT_ACCEL:
+				case XWII_EVENT_IR:
+				case XWII_EVENT_MOTION_PLUS:
+				case XWII_EVENT_NUNCHUK_KEY:
+				case XWII_EVENT_NUNCHUK_MOVE:
+				case XWII_EVENT_CLASSIC_CONTROLLER_KEY:
+				case XWII_EVENT_CLASSIC_CONTROLLER_MOVE:
+				case XWII_EVENT_PRO_CONTROLLER_KEY:
+				case XWII_EVENT_PRO_CONTROLLER_MOVE:
+				case XWII_EVENT_GUITAR_KEY:
+				case XWII_EVENT_GUITAR_MOVE:
+				case XWII_EVENT_DRUMS_KEY:
+				case XWII_EVENT_DRUMS_MOVE:
+					puts("Eventi vari non gestiti");
+					break;
+				default:
+					puts("Default");
+			}
+		}
+        pthread_mutex_lock(&(reader.state_lock));
 	}
-	wiiuse_cleanup(device.wiimotes, MAX_WIIMOTES);
-	reader.run = FALSE;
+	reader.run = false;
 	return 0;
 }
 
-int read_file() {
-	int file = open(arg.file, O_RDONLY);
-	if (file < 0) {
+int read_file() {  // FIXME
+	int file = open(arg.file_name, O_RDONLY);
+	if (file <= 0) {
 		puts("Error opening file");
 		return -1;
 	}
-	struct wii_board_t bb;
-	while (!reader.stop && read(file, &bb, sizeof(bb)) ) {
-		arg.notify(&bb);
-		usleep(REFRESH_TIME);
-	}
-	puts("EOF\n");
-	close(file);
+	/*
+		while (!reader.stop && read(file, &bb, sizeof(bb)) ) {
+		arg.bb_even_handler(&bb);
+	*/
+	usleep(REFRESH_TIME);
+	//}
+	puts("EOF");
+	//close(file);
 	return 0;
 }
 
 void reader_f(void* args) {
-	if (arg.file == NULL)
+	if (arg.file_name == NULL)
 		read_board();
 	else
 		read_file();
-	reader.run = FALSE;
-	reader.stop = FALSE;
-	printf("Close reader thread!\n");
+	reader.run = false;
+	reader.stop = false;
+	puts("Info: Close reader thread!");
 	pthread_exit(NULL);
 }
 
-void* finder_f(void* args) {
-	int found = wiiuse_find(device.wiimotes, MAX_WIIMOTES, TIMEOUT);
-	if (!found) {
-		printf("No wiimotes found.\n");
+struct xwii_iface * balance_board() {
+	struct xwii_monitor *mon;
+	struct xwii_iface *dev;
+	char *ent, *str;
+
+	mon = xwii_monitor_new(false, false);
+	if (!mon) {
+		printf("Cannot create monitor\n");
 		return NULL;
 	}
-	device.connected = wiiuse_connect(device.wiimotes, MAX_WIIMOTES);
-	if (device.connected) {
-		printf("Connected to %i wiimotes (of %i found).\n", device.connected, found);
-		reader.stop = TRUE;
-		alloc_thread(&reader, reader_f);
+
+	while ((ent = xwii_monitor_poll(mon))) {
+		if (xwii_iface_new(&dev, ent))
+			puts("Error: Can't create a new device object");
+		if (xwii_iface_get_devtype(dev, &str) != 0)
+			puts("Error: Reading the current device-type");
+
+		if (strcmp(str, "balanceboard") == 0) {
+			free(str);
+			free(ent);
+			xwii_monitor_unref(mon);
+			puts("INFO : Trovata");
+			return dev;
+		}
+		free(str);
+		free(ent);
+		free(dev);
 	}
-	else
-		printf("Failed to connect to any wiimote.\n");
-	finder.stop = FALSE;
-	finder.run = FALSE;
-	pthread_exit(NULL);
+	xwii_monitor_unref(mon);
+	return NULL;
 }
 
-void find_balance_board() {
-	if (arg.file == NULL)
-		alloc_thread(&finder, finder_f);
-	else
-		alloc_thread(&reader, reader_f);
+void init_pcfit(struct Argument argument, void (*handler_fun)(float *)) {
+	gui_callback = handler_fun;
+	memset(&reader, 0, sizeof(struct Thread));
+	int ret = pthread_mutex_init(&reader.state_lock, NULL);
+	if (ret != 0) {
+		puts("Error init mutex");
+		exit(-1);
+	}
+	memcpy(&arg, &argument, sizeof(struct Argument));
 }
 
-void init_pcfit(struct ARG a) {
-	memcpy(&arg, &a, sizeof(struct ARG));
-	if (arg.file == NULL)
-		device.wiimotes =  wiiuse_init(MAX_WIIMOTES);
+int start_pcfit() {
+	if(is_running(reader)) {
+		wait_stop(reader);
+	}
+	iface = balance_board();
+	if (iface != NULL) {
+		alloc_thread(&reader, reader_f, "Reader");
+		return 0;
+	}
+	return -1;
 }
 
 void close_lib() {
-	finder.stop = TRUE;
-	reader.stop = TRUE;
+	wait_stop(reader);
 	pthread_mutex_destroy(&point_lock);
+	pthread_mutex_destroy(&(reader.state_lock));
 }

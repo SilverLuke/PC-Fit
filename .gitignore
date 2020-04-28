@@ -1,1 +1,5 @@
-builddir
+bin
+.idea
+cmake-build-debug
+.buildconfig
+
