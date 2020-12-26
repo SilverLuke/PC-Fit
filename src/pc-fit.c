@@ -27,7 +27,7 @@
 #define REFRESH_TIME	(MILLI * MICROSECOND)  // In microsecond
 
 void (*gui_callback)(float *);
-struct Argument arg;
+struct Arguments arg;
 
 struct PointBuffer {
 	int x;
@@ -71,23 +71,24 @@ struct Thread{
 	bool stop;
 	pthread_mutex_t state_lock;
 }
-reader = {.run = false, .stop = false};
+bb_reader = {.run = false, .stop = false};
 
 bool is_running(struct Thread thr) {
     bool stop;
-    pthread_mutex_lock(&(reader.state_lock));
-    stop = reader.stop;
-    pthread_mutex_unlock(&(reader.state_lock));
+    pthread_mutex_lock(&(thr.state_lock));
+    stop = bb_reader.stop;
+    pthread_mutex_unlock(&(thr.state_lock));
     return stop;
 }
 
-void wait_stop(struct Thread thr) {
-    pthread_mutex_lock(&(reader.state_lock));
-    reader.stop = true;
-    pthread_mutex_unlock(&(reader.state_lock));
+void set_stop(struct Thread thr) {
+    pthread_mutex_lock(&(thr.state_lock));
+	bb_reader.stop = true;
+    pthread_mutex_unlock(&(thr.state_lock));
 }
 
 struct xwii_iface * iface;
+
 static void handle_event(const struct xwii_event *event) {
 	float cell[] = {
 	        event->v.abs[2].x / 100.,  // TL
@@ -103,7 +104,7 @@ void alloc_thread(struct Thread * t, void* func, const char *name) {
 	if (thread.run == false) {
 		pthread_create(&(thread.t), NULL, func, NULL);
 		pthread_detach(thread.t);
-		// thread.run = true;
+		thread.run = true;
 		thread.stop = false;
         //pthread_setname_np(thread, name);
 		printf("Info : Thread %s is started\n", name);
@@ -131,9 +132,9 @@ int read_board() {
 	if (ret)
 		puts("Error: Cannot initialize hotplug watch descriptor");
 	
-	pthread_mutex_lock(&(reader.state_lock));
-	while (!(reader.stop)) {
-		pthread_mutex_unlock(&(reader.state_lock));
+	pthread_mutex_lock(&(bb_reader.state_lock));
+	while (!(bb_reader.stop)) {
+		pthread_mutex_unlock(&(bb_reader.state_lock));
 
 		ret = poll(fds, fds_num, -1);
 		if (ret < 0) {
@@ -186,9 +187,9 @@ int read_board() {
 					puts("Default");
 			}
 		}
-        pthread_mutex_lock(&(reader.state_lock));
+        pthread_mutex_lock(&(bb_reader.state_lock));
 	}
-	reader.run = false;
+	bb_reader.run = false;
 	return 0;
 }
 
@@ -199,7 +200,7 @@ int read_file() {  // FIXME
 		return -1;
 	}
 	/*
-		while (!reader.stop && read(file, &bb, sizeof(bb)) ) {
+		while (!bb_reader.stop && read(file, &bb, sizeof(bb)) ) {
 		arg.bb_even_handler(&bb);
 	*/
 	usleep(REFRESH_TIME);
@@ -214,9 +215,9 @@ void reader_f(void* args) {
 		read_board();
 	else
 		read_file();
-	reader.run = false;
-	reader.stop = false;
-	puts("Info: Close reader thread!");
+	bb_reader.run = false;
+	bb_reader.stop = false;
+	puts("Info: Close bb_reader thread!");
 	pthread_exit(NULL);
 }
 
@@ -227,7 +228,7 @@ struct xwii_iface * balance_board() {
 
 	mon = xwii_monitor_new(false, false);
 	if (!mon) {
-		printf("Cannot create monitor\n");
+		puts("Cannot create monitor");
 		return NULL;
 	}
 
@@ -241,7 +242,9 @@ struct xwii_iface * balance_board() {
 			free(str);
 			free(ent);
 			xwii_monitor_unref(mon);
-			puts("INFO : Trovata");
+			uint8_t capacity;
+			if (xwii_iface_get_battery 	( dev, &capacity) >= 0)
+				printf("BATTERY: %hhu\n", capacity);
 			return dev;
 		}
 		free(str);
@@ -252,31 +255,38 @@ struct xwii_iface * balance_board() {
 	return NULL;
 }
 
-void init_pcfit(struct Argument argument, void (*handler_fun)(float *)) {
-	gui_callback = handler_fun;
-	memset(&reader, 0, sizeof(struct Thread));
-	int ret = pthread_mutex_init(&reader.state_lock, NULL);
+void pcfit_init(struct Arguments argument, void (*handler_fun)(float *)) {
+	puts("INIT PC-FIT");
+	// Reader Thread
+	memset(&bb_reader, 0, sizeof(struct Thread));
+	int ret = pthread_mutex_init(&bb_reader.state_lock, NULL);
 	if (ret != 0) {
 		puts("Error init mutex");
 		exit(-1);
 	}
-	memcpy(&arg, &argument, sizeof(struct Argument));
+
+	gui_callback = handler_fun;
+	memcpy(&arg, &argument, sizeof(struct Arguments));
 }
 
-int start_pcfit() {
-	if(is_running(reader)) {
-		wait_stop(reader);
+int pcfit_start() {
+	puts("START PC-FIT");
+	if(is_running(bb_reader)) {
+		puts("READING ALREADY RUNNING");
+		set_stop(bb_reader);
 	}
 	iface = balance_board();
 	if (iface != NULL) {
-		alloc_thread(&reader, reader_f, "Reader");
-		return 0;
+		puts("BB FOUND");
+		alloc_thread(&bb_reader, reader_f, "Reader");
+		return 1;
 	}
+	puts("BB NOT FOUND");
 	return -1;
 }
 
 void close_lib() {
-	wait_stop(reader);
+	set_stop(bb_reader);
 	pthread_mutex_destroy(&point_lock);
-	pthread_mutex_destroy(&(reader.state_lock));
+	pthread_mutex_destroy(&(bb_reader.state_lock));
 }

@@ -1,7 +1,10 @@
 #ifndef BIN_CONFIG_H
 #define BIN_CONFIG_H
 
-#define CONFIG_FILE "~/.config/pc-fit.conf"
+#include <argp.h>
+#include <stdbool.h>
+
+#define CONFIG_FILE "/.config/pc-fit.conf"
 
 struct Configuration {
 	int enable;  // If reminder is enable
@@ -9,14 +12,18 @@ struct Configuration {
 	int every;  // How often should remind
 };
 
-struct Argument {
-	char * file_name;
+struct Arguments {
+	char* file_name;
 	size_t file_name_len;
-	char reminder;  // If check reminder
+	bool reminder;  // If check reminder
 };
 
-int parse_config(struct Configuration * configuration);
+int parse_config(struct Configuration* configuration);
 
-struct Argument parse_arg(int argc, char **argv);
+error_t parse_opt(int key, char* arg, struct argp_state* state);
+
+void print_config(struct Configuration config);
+
+int update_config(struct Configuration config);
 
 #endif //BIN_CONFIG_H

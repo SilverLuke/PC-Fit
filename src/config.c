@@ -1,95 +1,136 @@
 #include <stdio.h>
-#include <getopt.h>
 #include <ctype.h>
-#include <unistd.h>
 #include <stdlib.h>
+#include <getopt.h>
+#include <unistd.h>
 #include <string.h>
+#include <errno.h>
 
 #include "config.h"
-#include "lib/tomlc99/toml.h"
 #include "mytime.h"
+#include "lib/tomlc99/toml.h"
 
-int parse_config(struct Configuration * configuration) {
-	struct Configuration config = *configuration;
-	FILE* fp;
-	toml_table_t* conf;
-	toml_table_t* notification;
-	const char* raw;
+#include <argp.h>
+#include <stdbool.h>
+
+error_t parse_opt(int key, char* arg, struct argp_state* state) {
+	struct Arguments* arguments = state->input;
+	switch (key) {
+		case 'n':
+			arguments->reminder = true;
+			break;
+		case 'f':
+			arguments->file_name = "nonfugne";
+			break;
+		case ARGP_KEY_ARG:
+			return 0;
+		default:
+			return ARGP_ERR_UNKNOWN;
+	}
+	return 0;
+}
+
+char* get_config_file_path() {
+	/* Home expansion */
+	char* homedir = getenv("HOME");
+	if (homedir == NULL) {
+		puts("$HOME is missing in the enviroment");
+		return NULL;
+	}
+	char len = strlen(homedir) + strlen(CONFIG_FILE) + 1;
+	char* file = malloc(sizeof(char) * len);
+	if (file == NULL) {
+		puts("Malloc error");
+		return NULL;
+	}
+
+	if (snprintf(file, len, "%s%s", homedir, CONFIG_FILE) < 0) {
+		puts("Error snprintf");
+		free(file);
+		return NULL;
+	}
+	return file;
+}
+
+int parse_config(struct Configuration* config) {
+	char* file = get_config_file_path();
+	if (file == NULL) {
+		return -1;
+	}
+
+	FILE* fp = fopen(file, "r");
+	if (fp == NULL) {
+		puts("Error opening configuration file");
+		return -1;
+	}
+
 	char errbuf[200];
-
-	/* open file and parse */
-	if (0 == (fp = fopen(CONFIG_FILE, "rw"))) {
-		puts("CONF FILE MISSING");
-		return -1;
-	}
-	conf = toml_parse_file(fp, errbuf, sizeof(errbuf));
+	toml_table_t* conf = toml_parse_file(fp, errbuf, sizeof(errbuf));
 	fclose(fp);
-	if (0 == conf) {
+	if (!conf) {
+		puts("Error parsing file");
 		return -1;
 	}
 
-	/* locate the [notification] table */
-	if (0 == (notification = toml_table_in(conf, "notification"))) {
+	toml_table_t* notification = toml_table_in(conf, "notification");
+	if (!notification) {
+		puts("Missing [notification]");
 		return -1;
 	}
 
-	if (0 == (raw = toml_raw_in(notification, "enable"))) {
-		return -1;
+	toml_datum_t enable = toml_bool_in(notification, "enable");
+	if (!enable.ok) {
+		puts("cannot read notification.enable");
 	}
-	if (toml_rtob(raw, &(config.enable))) {
-		return -1;
+	else {
+		config->enable = enable.u.b;
 	}
-	// Extract the last measurement
-	if (0 == (raw = toml_raw_in(notification, "last"))) {
-		return -1;
+
+	toml_datum_t last = toml_int_in(notification, "last");
+	if (!last.ok) {
+		puts("cannot read notification.last");
 	}
-	if (toml_rtoi(raw, &(config.last))) {
-		return -1;
+	else {
+		config->last = last.u.i;
 	}
-	// Extract the the frequency
-	if (0 == (raw = toml_raw_in(notification, "every"))) {
-		return -1;
+
+	toml_datum_t every = toml_int_in(notification, "every");
+	if (!every.ok) {
+		puts("cannot read notification.every");
 	}
-	if (toml_rtoi(raw, &(config.last))) {
-		return -1;
+	else {
+		config->every = every.u.i;
 	}
 
 	/* done with conf */
 	toml_free(conf);
 
-	if (config.enable && is_elapsed(config))
-		return 1;
 	return 0;
 }
 
-struct Argument parse_arg(int argc, char **argv) {
-	struct Argument arg;
-	arg.file_name = NULL;
-	arg.file_name_len = 0;
-	arg.reminder = 0;
+void print_config(struct Configuration config) {
+	printf("[notification]\n");
+	printf("enable = %s\n", config.enable ? "true" : "false");
+	printf("last = %li\n", config.last);
+	printf("every = %i\n", config.every);
+}
 
-	int c;
-	opterr = 0;
-	while((c = getopt (argc, argv, "f:")) != -1)
-		switch(c) {
-			case 'f':
-				arg.file_name_len = strlen(optarg);
-				memcpy(&(arg.file_name), &optarg, arg.file_name_len);
-				break;
-			case 'n':
-				arg.reminder = 1;
-				break;
-			case '?':
-				if (optopt == 'f')
-					fprintf(stderr, "Option -%c requires arg file path.\n", optopt);
-				else if (isprint (optopt))
-					fprintf(stderr, "Unknown option `-%c'.\n", optopt);
-				else
-					fprintf(stderr, "Unknown option character `\\x%x'.\n", optopt);
-				abort();
-			default:
-				abort();
-		}
-	printf ("arg.file = %s\n", arg.file_name);
-	return arg;
+int update_config(struct Configuration config) {
+	char* file = get_config_file_path();
+	FILE* fp;
+	fp = fopen(file, "w");
+	if (fp == NULL) {
+		puts("CONF FILE MISSING");
+		return -1;
+	}
+	else {
+		puts("Update configuration");
+		fprintf(fp, "[notification]\n");
+		fprintf(fp, "enable = %s\n", config.enable ? "true" : "false");
+		fprintf(fp, "last = %li\n", config.last);
+		fprintf(fp, "every = %i\n", config.every);
+	}
+	fclose(fp);
+	free(file);
+	return 1;
 }

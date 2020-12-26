@@ -1,4 +1,5 @@
 #include <sys/time.h>
+#include <stdbool.h>
 #include "config.h"
 
 void set_time(struct timeval * now);
@@ -11,4 +12,6 @@ double elapsed_time(struct timeval from);
 
 void reset(struct timeval * x);
 
-int is_elapsed(struct Configuration config);
+bool check_time(struct Configuration config);
+
+void print_time(struct timeval x);

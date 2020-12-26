@@ -1,3 +1,3 @@
 [submodule "src/lib/tomlc99"]
-	path = src/lib/tomlc99
+	path = lib/tomlc99
 	url = https://github.com/cktan/tomlc99.git

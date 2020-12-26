@@ -16,9 +16,9 @@ struct xwii_iface * find_balance_board();
 
 void close_lib();
 
-void init_pcfit(struct Argument argument, void (*handler_fun)(float *));
+void pcfit_init(struct Arguments argument, void (*handler_fun)(float *));
 
-int start_pcfit();
+int pcfit_start();
 
 void set_point(int x, int y);
 

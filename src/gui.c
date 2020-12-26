@@ -17,9 +17,10 @@
 
 #include "pc-fit.h"
 #include "mytime.h"
+#include "config.h"
 
-#define GUI_DIR  "/dati/luca/Progetti/pc-fit/data/"
-#define GUI_FILE GUI_DIR "interface.ui"
+#define GUI_DIR		"/home/luca/Progetti/pc-fit/data/"  // FIXME
+#define GUI_FILE	GUI_DIR "interface.ui"
 #define BB_IMAGE    GUI_DIR "bb.png"
 
 #define SCALE(r, g, b, a) r/255, g/255, b/255, a/255
@@ -29,6 +30,7 @@
 #define MIN_WEIGHT		10.
 #define SAMPLING_TIME		5.
 #define SHOW_WEIGHT_TIME	3.
+#define NEXT_SCAN		10
 
 struct Image {
 	GtkDrawingArea * area;
@@ -39,13 +41,23 @@ struct Image {
 	int y;
 };
 
-struct Gui {
+struct BB_gui {
 	struct Image image;
 	GtkLabel* weight;
 	GtkLabel* top_left;
 	GtkLabel* top_right;
 	GtkLabel* bottom_left;
 	GtkLabel* bottom_right;
+};
+
+struct Gui {
+	GtkBuilder* builder;
+	struct BB_gui bb;
+	GtkApplicationWindow* app;
+	GtkBox* bb_not_found;
+	GtkBox* bb_found;
+	GtkLabel* time;
+	struct Configuration config;
 } gui;
 
 void set_text(GtkLabel* l, float val) {
@@ -55,16 +67,16 @@ void set_text(GtkLabel* l, float val) {
 }
 
 void update_cells_text (float cells[]) {
-	set_text(gui.top_left,     cells[TL]);
-	set_text(gui.top_right,    cells[TR]);
-	set_text(gui.bottom_left,  cells[BL]);
-	set_text(gui.bottom_right, cells[BR]);
+	set_text(gui.bb.top_left, cells[TL]);
+	set_text(gui.bb.top_right, cells[TR]);
+	set_text(gui.bb.bottom_left, cells[BL]);
+	set_text(gui.bb.bottom_right, cells[BR]);
 }
 
 static gboolean update_text (gpointer userdata) {
 	float *cells = (float*) userdata;
 	float kg = get_weight(cells);
-	set_text(gui.weight, kg);
+	set_text(gui.bb.weight, kg);
 	update_cells_text(cells);
 	free(cells);
 	return G_SOURCE_REMOVE;
@@ -72,7 +84,7 @@ static gboolean update_text (gpointer userdata) {
 
 static gboolean show_weight (gpointer userdata) {
 	float kg = *((float*) userdata);
-	set_text(gui.weight, kg);
+	set_text(gui.bb.weight, kg);
 	free(userdata);
 	return G_SOURCE_REMOVE;
 }
@@ -81,7 +93,7 @@ gboolean draw_callback(GtkWidget * w, cairo_t *cr, gpointer data) {
 	int x, y;
 	get_point(&x, &y);
 
-	gdk_cairo_set_source_pixbuf(cr, gui.image.pixbuf, gui.image.x_offset, gui.image.y_offset);
+	gdk_cairo_set_source_pixbuf(cr, gui.bb.image.pixbuf, gui.bb.image.x_offset, gui.bb.image.y_offset);
 	cairo_paint(cr);
 	// Green dot
 	cairo_pattern_t * radpat = cairo_pattern_create_radial (x, y, 2, x, y, RADIUS);
@@ -98,10 +110,10 @@ gboolean draw_callback(GtkWidget * w, cairo_t *cr, gpointer data) {
 }
 
 void set_point_coord(float center[]) {
-	float ratiox = gui.image.x / TOTAL_WEIGHT;
-	float ratioy = gui.image.y / TOTAL_WEIGHT;
-	int pointx =  (center[X] * ratiox) + gui.image.x / 2. + gui.image.x_offset;
-	int pointy = (-center[Y] * ratioy) + gui.image.y / 2. + gui.image.y_offset;
+	float ratiox = gui.bb.image.x / TOTAL_WEIGHT;
+	float ratioy = gui.bb.image.y / TOTAL_WEIGHT;
+	int pointx = (center[X] * ratiox) + gui.bb.image.x / 2. + gui.bb.image.x_offset;
+	int pointy = (-center[Y] * ratioy) + gui.bb.image.y / 2. + gui.bb.image.y_offset;
 
 	set_point(pointx, pointy);
 
@@ -116,6 +128,8 @@ struct Samples {
 	float weight;
 };
 
+int sec_expired = NEXT_SCAN;
+
 void add_sample(struct Samples *s, float weight) {
 	s->total_weight += weight;
 	s->sample++;
@@ -123,7 +137,6 @@ void add_sample(struct Samples *s, float weight) {
 
 void reset_sampling(struct Samples *s) {
 	*s = (struct Samples) {0};
-	//memset(&s, 0, sizeof(struct Samples));
 }
 
 bool in_range(float magnitude, float weight) {
@@ -182,58 +195,106 @@ void handle_bb_event(float *cells) {
 			}
 	}
 
-	gdk_threads_add_idle((GSourceFunc)gtk_widget_queue_draw,(void*) gui.image.area);
+	gdk_threads_add_idle((GSourceFunc)gtk_widget_queue_draw,(void*) gui.bb.image.area);
 }
-
-
-void device_list_show() {  // FIXME
-	puts("Info: Button pressed.");
-	start_pcfit();
-}
-
 
 void main_quit() {
+	puts("QUITTING...");
 	close_lib();
+	update_config(gui.config);
 	gtk_main_quit();
-	exit(0);
 }
 
-int gui_init() {
-	GtkBuilder* builder = gtk_builder_new_from_file (GUI_FILE);
-
-	GObject* window = gtk_builder_get_object(builder, "window");
-	g_signal_connect(window, "destroy", G_CALLBACK (main_quit), NULL);
-
-	GObject* find_btn = gtk_builder_get_object (builder, "devices-btn");
-	g_signal_connect(find_btn, "clicked", G_CALLBACK (device_list_show), NULL);
-
-	gui.image.area   = GTK_DRAWING_AREA(gtk_builder_get_object(builder, "area"));
-	gui.top_left     = GTK_LABEL(gtk_builder_get_object(builder, "top-left"));
-	gui.top_right    = GTK_LABEL(gtk_builder_get_object(builder, "top-right"));
-	gui.bottom_left  = GTK_LABEL(gtk_builder_get_object(builder, "bottom-left"));
-	gui.bottom_right = GTK_LABEL(gtk_builder_get_object(builder, "bottom-right"));
-	gui.weight       = GTK_LABEL(gtk_builder_get_object(builder, "weight"));
-
-	g_signal_connect(G_OBJECT(gui.image.area), "draw", G_CALLBACK(draw_callback), NULL);
-
+void bb_instance () {
+	g_signal_connect(G_OBJECT(gui.bb.image.area), "draw", G_CALLBACK(draw_callback), NULL);
 	GtkAllocation widget;
-	gtk_widget_get_allocation(GTK_WIDGET(gui.image.area), &widget);
+	gtk_widget_get_allocation(GTK_WIDGET(gui.bb.image.area), &widget);
 
 	GError *err = NULL;
-	gui.image.pixbuf = gdk_pixbuf_new_from_file_at_scale(BB_IMAGE, widget.width, widget.height, TRUE, &err);
+	gui.bb.image.pixbuf = gdk_pixbuf_new_from_file_at_scale(BB_IMAGE, widget.width, widget.height, TRUE, &err);
 	if (err) {
 		printf("Error : %s\n", err->message);
 		g_error_free(err);
-		return -1;
+		main_quit();
 	}
 
-	gui.image.x = gdk_pixbuf_get_width(gui.image.pixbuf);
-	gui.image.x_offset = (widget.width - gui.image.x) / 2;
-	gui.image.y = gdk_pixbuf_get_height(gui.image.pixbuf);
-	gui.image.y_offset = (widget.height - gui.image.y) / 2;
+	gui.bb.image.x = gdk_pixbuf_get_width(gui.bb.image.pixbuf);
+	gui.bb.image.x_offset = (widget.width - gui.bb.image.x) / 2;
+	gui.bb.image.y = gdk_pixbuf_get_height(gui.bb.image.pixbuf);
+	gui.bb.image.y_offset = (widget.height - gui.bb.image.y) / 2;
 
-	printf("Info: Widget (%d, %d) Image (%d x %d) offset (%d %d).\n", widget.width, widget.height, gui.image.x, gui.image.y, gui.image.x_offset, gui.image.y_offset);
+	printf("Info: Widget (%d, %d) Image (%d x %d) offset (%d %d).\n", widget.width, widget.height, gui.bb.image.x, gui.bb.image.y, gui.bb.image.x_offset, gui.bb.image.y_offset);
 
-	set_point(-RADIUS, -RADIUS);
+}
+
+int gui_bb_start() {
+	puts("START BB INTERFACE");
+
+	gtk_container_remove(GTK_CONTAINER(gui.app), GTK_WIDGET(gui.bb_not_found));
+	gtk_container_add(GTK_CONTAINER(gui.app), GTK_WIDGET(gui.bb_found));
+
+	g_signal_connect((gui.bb.image.area), "size-allocate", G_CALLBACK(bb_instance), NULL);
 	return 0;
+}
+
+static gboolean next_scan_update(gpointer data) {
+	GtkLabel *label = (GtkLabel*)data;
+	char buf[256];
+	memset(&buf, 0x0, 256);
+	snprintf(buf, 255, "Next scan in %d secs", --sec_expired);
+	if (sec_expired <= 0) {
+		if (pcfit_start() > 0) {
+			gui_bb_start();
+			return FALSE;  // Stop the timer
+		}
+		else {
+			sec_expired = NEXT_SCAN;
+		}
+	}
+	gtk_label_set_label(label, buf);
+	return TRUE;
+}
+
+void gui_start() {
+	puts("STARTING GUI");
+
+	int bb_connected = pcfit_start();
+	if (bb_connected > 0) {
+		gui_bb_start();
+	} else {
+		next_scan_update(gui.time);
+		g_timeout_add_seconds(1, next_scan_update, gui.time);
+	}
+
+	gtk_main();
+}
+
+void open_settings() {
+	puts("TODO");
+}
+
+void gui_init(struct Configuration config) {
+	gtk_init(NULL,NULL);
+	gui.config = config;
+	gui.builder = gtk_builder_new_from_file (GUI_FILE);
+
+	gui.app = GTK_APPLICATION_WINDOW(gtk_builder_get_object(gui.builder, "container_window"));
+	g_signal_connect(gui.app, "destroy", G_CALLBACK (main_quit), NULL);
+
+	GObject* settings_btn = gtk_builder_get_object (gui.builder, "settings-btn");
+	g_signal_connect(settings_btn, "clicked", G_CALLBACK (open_settings), NULL);
+
+	gui.bb_not_found = GTK_BOX(gtk_builder_get_object(gui.builder, "bb_not_found_box"));
+	gui.bb_found = GTK_BOX(gtk_builder_get_object(gui.builder, "bb_found_box"));
+
+	gui.bb.image.area   = GTK_DRAWING_AREA(gtk_builder_get_object(gui.builder, "area"));
+	gui.bb.weight       = GTK_LABEL(gtk_builder_get_object(gui.builder, "weight"));
+	gui.bb.top_left     = GTK_LABEL(gtk_builder_get_object(gui.builder, "top-left"));
+	gui.bb.top_right    = GTK_LABEL(gtk_builder_get_object(gui.builder, "top-right"));
+	gui.bb.bottom_left  = GTK_LABEL(gtk_builder_get_object(gui.builder, "bottom-left"));
+	gui.bb.bottom_right = GTK_LABEL(gtk_builder_get_object(gui.builder, "bottom-right"));
+
+	gui.time = GTK_LABEL(gtk_builder_get_object(gui.builder, "next_scan_label"));
+
+	puts("INIT GUI");
 }

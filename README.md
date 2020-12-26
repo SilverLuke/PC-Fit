@@ -4,6 +4,7 @@ A GTK interface for using the Nintendo Balance Board
 ## Dependencies
 
 This software require these build dependencies:
+
 ```
 Meson
 xwiimote
@@ -15,8 +16,12 @@ GTK3
 
 ```
 git submodule update --init
-mkdir builddir
 meson builddir
 cd builddir
 ninja
 ```
+
+## How to use meson with clion
+
+https://www.jetbrains.com/help/clion/compilation-database.html
+https://www.jetbrains.com/help/clion/custom-build-targets.html

@@ -1,5 +1,7 @@
-bin
-.idea
+builddir
 cmake-build-debug
+.idea
 .buildconfig
+compile_commands.json
+idea-backup
 

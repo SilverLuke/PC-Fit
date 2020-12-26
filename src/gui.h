@@ -1,12 +1,10 @@
-//
-// Created by luca on 07/04/20.
-//
-
 #ifndef BIN_GUI_H
 #define BIN_GUI_H
 
 void handle_bb_event(float *cells);
 
-int gui_init();
+void gui_init(struct Configuration config);
+
+void gui_start();
 
 #endif //BIN_GUI_H
