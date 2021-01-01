@@ -30,7 +30,7 @@
 #define MIN_WEIGHT		10.
 #define SAMPLING_TIME		5.
 #define SHOW_WEIGHT_TIME	3.
-#define NEXT_SCAN		10
+#define NEXT_SCAN		1
 
 struct Image {
 	GtkDrawingArea * area;
@@ -125,7 +125,6 @@ struct timeval sampling_time, show_weight_time;
 struct Samples {
 	int sample;
 	float total_weight;
-	float weight;
 };
 
 int sec_expired = NEXT_SCAN;
@@ -223,6 +222,10 @@ void bb_instance () {
 	gui.bb.image.y = gdk_pixbuf_get_height(gui.bb.image.pixbuf);
 	gui.bb.image.y_offset = (widget.height - gui.bb.image.y) / 2;
 
+	int pointx = gui.bb.image.x / 2. + gui.bb.image.x_offset;
+	int pointy = gui.bb.image.y / 2. + gui.bb.image.y_offset;
+	set_point(pointx, pointy);
+
 	printf("Info: Widget (%d, %d) Image (%d x %d) offset (%d %d).\n", widget.width, widget.height, gui.bb.image.x, gui.bb.image.y, gui.bb.image.x_offset, gui.bb.image.y_offset);
 
 }
@@ -276,7 +279,7 @@ void open_settings() {
 void gui_init(struct Configuration config) {
 	gtk_init(NULL,NULL);
 	gui.config = config;
-	gui.builder = gtk_builder_new_from_file (GUI_FILE);
+	gui.builder = gtk_builder_new_from_file(GUI_FILE);
 
 	gui.app = GTK_APPLICATION_WINDOW(gtk_builder_get_object(gui.builder, "container_window"));
 	g_signal_connect(gui.app, "destroy", G_CALLBACK (main_quit), NULL);

@@ -146,12 +146,7 @@ int read_board() {
 		}
 
 		ret = xwii_iface_dispatch(iface, &event, sizeof(event));
-		if (ret != false) {
-			if (ret != -EAGAIN) {
-				printf("Error: Read failed with err:%d\n", ret);
-			}
-		}
-		else {
+		if (ret == false) {
 			switch (event.type) {
 				case XWII_EVENT_BALANCE_BOARD:
 					handle_event(&event);
@@ -187,7 +182,12 @@ int read_board() {
 					puts("Default");
 			}
 		}
-        pthread_mutex_lock(&(bb_reader.state_lock));
+		else {
+			if (ret != -EAGAIN) {
+				printf("Error: Read failed with err:%d\n", ret);
+			}
+		}
+		pthread_mutex_lock(&(bb_reader.state_lock));
 	}
 	bb_reader.run = false;
 	return 0;
@@ -211,10 +211,11 @@ int read_file() {  // FIXME
 }
 
 void reader_f(void* args) {
-	if (arg.file_name == NULL)
+	if (arg.file_name == NULL) {
 		read_board();
-	else
+	} else {
 		read_file();
+	}
 	bb_reader.run = false;
 	bb_reader.stop = false;
 	puts("Info: Close bb_reader thread!");

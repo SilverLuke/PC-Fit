@@ -27,7 +27,7 @@ int main(int argc, char** argv) {
 	// usleep(1000);
 
 	struct Arguments arg;
-	arg.file_name = "";
+	arg.file_name = NULL;
 	arg.file_name_len = 0;
 	arg.reminder = false;
 	argp_parse(&argp, argc, argv, 0, 0, &arg);
