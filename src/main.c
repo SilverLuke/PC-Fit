@@ -39,14 +39,12 @@ int main(int argc, char** argv) {
 		exit(-1);
 	}
 
-
 	if (arg.reminder && config.enable) {
 		print_config(config);
 		if (check_time(config)) {
 			puts("Reminder AND enable AND time");
 			goto START;
-		}
-		else {
+		} else {
 			puts("Time not ready!! Closing");
 			return 1;
 		}
@@ -54,6 +52,7 @@ int main(int argc, char** argv) {
 		puts("Not enable in config");
 		return 0;
 	}
+
 	puts("Direct start");
 	START:
 	gui_init(config);

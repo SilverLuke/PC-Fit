@@ -81,30 +81,25 @@ int parse_config(struct Configuration* config) {
 	toml_datum_t enable = toml_bool_in(notification, "enable");
 	if (!enable.ok) {
 		puts("cannot read notification.enable");
-	}
-	else {
+	} else {
 		config->enable = enable.u.b;
 	}
 
 	toml_datum_t last = toml_int_in(notification, "last");
 	if (!last.ok) {
 		puts("cannot read notification.last");
-	}
-	else {
+	} else {
 		config->last = last.u.i;
 	}
 
 	toml_datum_t every = toml_int_in(notification, "every");
 	if (!every.ok) {
 		puts("cannot read notification.every");
-	}
-	else {
+	} else {
 		config->every = every.u.i;
 	}
 
-	/* done with conf */
 	toml_free(conf);
-
 	return 0;
 }
 
@@ -122,12 +117,13 @@ int update_config(struct Configuration config) {
 	if (fp == NULL) {
 		puts("CONF FILE MISSING");
 		return -1;
-	}
-	else {
+	} else {
+		struct timeval now;
+		set_time(&now);
 		puts("Update configuration");
 		fprintf(fp, "[notification]\n");
 		fprintf(fp, "enable = %s\n", config.enable ? "true" : "false");
-		fprintf(fp, "last = %li\n", config.last);
+		fprintf(fp, "last = %li\n", now.tv_sec);
 		fprintf(fp, "every = %i\n", config.every);
 	}
 	fclose(fp);

@@ -1,5 +1,5 @@
-#define	MAX_WEIGHT		34.
-#define TOTAL_WEIGHT	(MAX_WEIGHT * 4.)  // 34 max Kg multiplied each load cell
+#define    MAX_WEIGHT        34.
+#define TOTAL_WEIGHT    (MAX_WEIGHT * 4.)  // 34 max Kg multiplied each load cell
 
 #define X 0
 #define Y 1
@@ -12,17 +12,17 @@
 
 #include "config.h"
 
-struct xwii_iface * find_balance_board();
+struct xwii_iface* find_balance_board();
 
 void close_lib();
 
-void pcfit_init(struct Arguments argument, void (*handler_fun)(float *));
+void pcfit_init(struct Arguments argument, void (* handler_fun)(float*));
 
 int pcfit_start();
 
 void set_point(int x, int y);
 
-void get_point(int *x, int *y);
+void get_point(int* x, int* y);
 
 void center_of_gravity(float cells[], float center[]);
 
