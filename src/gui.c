@@ -19,9 +19,8 @@
 #include "mytime.h"
 #include "config.h"
 
-#define GUI_DIR     "/home/luca/Progetti/pc-fit/data/"  // FIXME
-#define GUI_FILE    GUI_DIR "interface.ui"
-#define BB_IMAGE    GUI_DIR "bb.png"
+#define GUI_FILE    "res/gui/interface.ui"
+#define BB_IMAGE    "res/images/bb.png"
 
 #define SCALE(r, g, b, a) r/255, g/255, b/255, a/255
 
@@ -30,7 +29,7 @@
 #define MIN_WEIGHT       10.
 #define SAMPLING_TIME    5.
 #define SHOW_WEIGHT_TIME 3.
-#define NEXT_SCAN        1
+#define NEXT_SCAN        3  // Seconds between bluetooth scans (The OS scans for bluetooth device)
 
 struct Image {
 	GtkDrawingArea* area;
@@ -59,6 +58,24 @@ struct Gui {
 	GtkLabel* time;
 	struct Configuration config;
 } gui;
+
+char* get_resource(char* relative_pos) {
+	int len = sizeof(char) * PATH_MAX;
+	char* cwd = malloc(len);
+	if (getcwd(cwd, len) != NULL) {
+		for (int i = strlen(cwd); i >= 0; i--) {
+			if (cwd[i] == '/') {
+				cwd[i+1] = 0;
+				break;
+			}
+		}
+		strcat(cwd, relative_pos);
+	} else {
+		perror("getcwd() error");
+		exit(1);
+	}
+	return cwd;
+}
 
 void set_text(GtkLabel* l, float val) {
 	char str[32];
@@ -198,7 +215,8 @@ void handle_bb_event(float* cells) {
 void main_quit() {
 	puts("QUITTING...");
 	close_lib();
-	update_config(gui.config);
+	update_last_config(gui.config);
+	write_config(gui.config);
 	gtk_main_quit();
 }
 
@@ -208,7 +226,9 @@ void bb_instance() {
 	gtk_widget_get_allocation(GTK_WIDGET(gui.bb.image.area), &widget);
 
 	GError* err = NULL;
-	gui.bb.image.pixbuf = gdk_pixbuf_new_from_file_at_scale(BB_IMAGE, widget.width, widget.height, TRUE, &err);
+	char * image_res = get_resource(BB_IMAGE);
+	gui.bb.image.pixbuf = gdk_pixbuf_new_from_file_at_scale(image_res, widget.width, widget.height, TRUE, &err);
+	free(image_res);
 	if (err) {
 		printf("Error : %s\n", err->message);
 		g_error_free(err);
@@ -282,7 +302,9 @@ void open_settings() {
 void gui_init(struct Configuration config) {
 	gtk_init(NULL, NULL);
 	gui.config = config;
-	gui.builder = gtk_builder_new_from_file(GUI_FILE);
+	char* builder_file = get_resource(GUI_FILE);
+	gui.builder = gtk_builder_new_from_file(builder_file);
+	free(builder_file);
 
 	gui.app = GTK_APPLICATION_WINDOW(gtk_builder_get_object(gui.builder, "container_window"));
 	g_signal_connect(gui.app, "destroy", G_CALLBACK(main_quit), NULL);

@@ -34,9 +34,15 @@ int main(int argc, char** argv) {
 
 	struct Configuration config;
 	// Parsing configuration
-	if (parse_config(&config) < 0) {
-		puts("Error parsing configuration");
+	int ret = read_config(&config);
+	if (ret == -1) {
+		puts("ERROR: parsing configuration tag not found, this error should not happen.");
+		puts("Write this in config file (~/.config/pc-fif/pc-fit.conf) or delete it");
+		default_config(&config);
+		print_config(config);
 		exit(-1);
+	} else if (ret == 1) {  // New configuration file
+		goto START;
 	}
 
 	if (arg.reminder && config.enable) {

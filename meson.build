@@ -8,7 +8,8 @@ sources = files(
 	'src/config.c',
 	'src/pc-fit.c',
 	'src/mytime.c',
-	'lib/tomlc99/toml.c'
+	'lib/tomlc99/toml.c',
+	'lib/libxdg-basedir/src/basedir.c',
 )
 
 cc = meson.get_compiler('c')

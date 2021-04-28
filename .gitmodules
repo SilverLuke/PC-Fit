@@ -1,3 +1,12 @@
 [submodule "src/lib/tomlc99"]
 	path = lib/tomlc99
 	url = https://github.com/cktan/tomlc99.git
+[submodule "libxdg-basedir"]
+	path = lib/libxdg-basedir
+	url = https://github.com/devnev/libxdg-basedir.git
+[submodule "lib/lib/libxdg-basedir"]
+	path = lib/lib/libxdg-basedir
+	url = https://github.com/devnev/libxdg-basedir.git
+[submodule "lib/libxdg-basedir"]
+	path = lib/libxdg-basedir
+	url = https://github.com/devnev/libxdg-basedir.git

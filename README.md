@@ -1,15 +1,15 @@
 # PC-Fit
-A GTK interface for using the Nintendo Balance Board 
+A GTK interface for the Nintendo Balance Board. You can use this program for weighing yourself, or some object.
+For object under 10 kg the reported weight isn't precise, the Balance Board use four load cells and need some mass to be accurate.  
 
 ## Dependencies
 
-This software require these build dependencies:
+This software requires those dependencies for building:
 
 ```
+GTK3
 Meson
 xwiimote
-toml.c
-GTK3
 ```
 
 ## Build
@@ -21,7 +21,6 @@ cd builddir
 ninja
 ```
 
-## How to use meson with clion
+## Screenshot
 
-https://www.jetbrains.com/help/clion/compilation-database.html
-https://www.jetbrains.com/help/clion/custom-build-targets.html
+![](Screenshot.png)
