@@ -19,7 +19,7 @@
             <property name="visible">True</property>
             <property name="can-focus">False</property>
             <property name="halign">end</property>
-            <property name="label" translatable="yes">Weigth:</property>
+            <property name="label" translatable="yes">Weight:</property>
             <attributes>
               <attribute name="absolute-size" value="50000"/>
             </attributes>
